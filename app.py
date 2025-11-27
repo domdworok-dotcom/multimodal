@@ -3,11 +3,16 @@ from PIL import Image, ImageDraw
 import os
 import math
 import time
+import re 
 
 # ---------- Konfiguration ----------
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_IMG_FILENAME = "Hibiskus.jpg"
 DEFAULT_IMG_PATH = os.path.join(SCRIPT_DIR, DEFAULT_IMG_FILENAME)
+
+# Das Pflege-Bild
+CARE_IMG_FILENAME = "Hibiskus pflege.jpg"
+CARE_IMG_PATH = os.path.join(SCRIPT_DIR, CARE_IMG_FILENAME)
 
 # ---------- Design-Farben (Dark Mode) ----------
 PRIMARY_COLOR = "#4CAF50"
@@ -36,8 +41,7 @@ st.markdown(f"""
         padding: 1rem;
         border-radius: 10px;
         margin-bottom: 10px;
-        display: flex;
-        flex-direction: column;
+        display: block; 
         color: {TEXT_COLOR};
         font-family: Arial, sans-serif;
         line-height: 1.5;
@@ -48,20 +52,16 @@ st.markdown(f"""
     }}
     .user-message {{
         background-color: {USER_BG};
-        align-items: flex-end;
         text-align: right;
-    }}
-    .highlight-text {{
-        color: #80CBC4; 
-        font-weight: bold;
     }}
     .contrast-text {{
         font-style: italic;
         color: #B0BEC5;
         font-size: 0.9em;
-        margin-top: 5px;
+        margin-top: 10px;
+        padding-top: 8px;
         border-top: 1px solid #444;
-        padding-top: 5px;
+        display: block;
     }}
     .typing-indicator {{
         font-style: italic;
@@ -70,9 +70,11 @@ st.markdown(f"""
         margin-left: 10px;
         margin-bottom: 10px;
     }}
-    h1, h2, h3, p {{
+    h1, h2, h3, p, li {{
         color: {TEXT_COLOR} !important;
     }}
+    
+    /* Standard Buttons (Grau, Navigations-Buttons) */
     .stButton>button {{
         width: 100%;
         border-radius: 20px;
@@ -85,12 +87,25 @@ st.markdown(f"""
         border-color: {PRIMARY_COLOR};
         color: {PRIMARY_COLOR};
     }}
+
+    /* NEU: Primary Buttons (Hervorgehoben, Grün gefüllt) */
+    /* Targetiert Buttons mit type="primary" */
+    button[kind="primary"] {{
+        background-color: {PRIMARY_COLOR} !important;
+        color: white !important;
+        border: none !important;
+        font-size: 1.1em !important;
+        box-shadow: 0 4px 10px rgba(76, 175, 80, 0.3);
+    }}
+    button[kind="primary"]:hover {{
+        background-color: #43A047 !important;
+        box-shadow: 0 6px 12px rgba(76, 175, 80, 0.5);
+    }}
 </style>
 """, unsafe_allow_html=True)
 
 # ---------- Logik-Funktionen (Bildbearbeitung) ----------
 
-# ÄNDERUNG: Neuer Parameter 'radius_factor' (Standard 0.45)
 def add_highlight_to_crop(pil_crop_img, radius_factor=0.45):
     """Fügt den Highlight-Effekt (türkiser Kreis) hinzu."""
     if pil_crop_img is None: return None
@@ -98,10 +113,8 @@ def add_highlight_to_crop(pil_crop_img, radius_factor=0.45):
     w, h = base.size
     cx, cy = w / 2, h / 2
     
-    # ÄNDERUNG: Radius wird nun über den variablen Faktor bestimmt
     max_radius = min(w, h) * radius_factor
 
-    # Maske erstellen
     gradient_mask = Image.new("L", (w, h), 0)
     mask_data = []
     max_opacity = 180 
@@ -116,14 +129,12 @@ def add_highlight_to_crop(pil_crop_img, radius_factor=0.45):
                 mask_data.append(0)
     gradient_mask.putdata(mask_data)
 
-    # Farbe & Rand
     solid_color = Image.new("RGBA", (w, h), HIGHLIGHT_RGB + (255,))
     solid_color.putalpha(gradient_mask)
     combined = Image.alpha_composite(base, solid_color)
 
     border_layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     border_draw = ImageDraw.Draw(border_layer)
-    # Rand etwas enger am Gradienten
     border_rad = max_radius * 0.98 
     border_draw.ellipse((cx - border_rad, cy - border_rad, cx + border_rad, cy + border_rad),
                         fill=None, outline=BORDER_RGB + (255,), width=3)
@@ -154,6 +165,8 @@ if 'img' not in st.session_state:
     st.session_state['img'] = None
 if 'finished' not in st.session_state:
     st.session_state['finished'] = False
+if 'final_timer_done' not in st.session_state:
+    st.session_state['final_timer_done'] = False
 
 # Definition der Schritte
 STEPS = [
@@ -164,8 +177,7 @@ STEPS = [
         "desc": "Die Blüte ist groß, trichterförmig und die Kronblätter überlappen sich.",
         "contrast": "💡 Abgrenzung: Im Gegensatz dazu sind Rosenblüten viel kompakter und gefüllt.",
         "highlight_word": None,
-        "use_img_highlight": False,
-        "question": "Erkennst du diese typische Trichterform?" 
+        "use_img_highlight": False
     },
     {
         "intro": "🌸 Hier kommt das erste wichtige Detail zur Identifikation:",
@@ -175,8 +187,6 @@ STEPS = [
         "contrast": "💡 Abgrenzung: Viele andere Gartenblumen (z.B. Tulpen) haben ganz glatte Ränder ohne Wellen.",
         "highlight_word": "Blütenrand", 
         "use_img_highlight": True,
-        # Standard Radius (0.45) wird verwendet
-        "question": "Siehst du die feine Wellung am Rand?"
     },
     {
         "intro": "🌺 Das zweite wichtige Merkmal ist im Zentrum der Blüte zu finden.",
@@ -186,9 +196,7 @@ STEPS = [
         "contrast": "💡 Abgrenzung: Bei der ähnlichen Malve ist diese Säule viel kürzer und buschiger.",
         "highlight_word": "Staubgefäße",
         "use_img_highlight": True,
-        # ÄNDERUNG: Spezieller Radius-Faktor für diesen Schritt (kleiner = enger)
         "radius_factor": 0.28, 
-        "question": "Kannst du die gelben Pollen an der Spitze der Säule erkennen?"
     }
 ]
 
@@ -196,33 +204,52 @@ STEPS = [
 
 def add_bot_message(text, image=None, caption=None, contrast=None, highlight_word=None, delay=True):
     """
-    Fügt eine Bot-Nachricht hinzu und simuliert Tipp-Zeit.
+    Fügt Bot-Nachricht hinzu. Wenn delay=True, wird der Text WORT FÜR WORT generiert.
     """
     
-    # 1. Tipp-Simulation (Delay)
-    if delay:
-        # ÄNDERUNG: Berechnung der Wartezeit deutlich verkürzt
-        # Basis 0.3s (statt 0.6) + 0.015s pro Zeichen (statt 0.03). Max 2.0s (statt 3.5s).
-        char_count = len(text) + (len(contrast) if contrast else 0)
-        sleep_time = min(0.3 + (char_count * 0.015), 2.0)
-        
-        # Zeige "Flori schreibt..." Placeholder
-        typing_placeholder = st.empty()
-        typing_placeholder.markdown("<div class='typing-indicator'>Flori schreibt ...</div>", unsafe_allow_html=True)
-        time.sleep(sleep_time)
-        typing_placeholder.empty()
-
-    # 2. Text Formatierung
     if highlight_word and highlight_word in text:
-        text = text.replace(highlight_word, f"<span class='highlight-text'>{highlight_word}</span>")
+        # Türkis (#80CBC4) und Fett, inline
+        text = text.replace(highlight_word, f"<span style='color: #80CBC4; font-weight: bold;'>{highlight_word}</span>")
     
+    full_inner_html = f"<div>{text}</div>"
     if contrast:
-        text += f"<br><div class='contrast-text'>{contrast}</div>"
+        full_inner_html += f"<div class='contrast-text'>{contrast}</div>"
 
-    # 3. Zum State hinzufügen
+    if delay:
+        if image:
+            with st.chat_message("assistant", avatar="🌿"):
+                st.image(image, caption=caption, use_container_width=True)
+        
+        placeholder = st.empty()
+        
+        # Word-by-Word Streaming Logik
+        tokens = re.findall(r'(<[^>]+>|[^<]+)', full_inner_html)
+        stream_parts = []
+        for token in tokens:
+            if token.startswith('<'):
+                stream_parts.append(token)
+            else:
+                words = re.split(r'(\s+)', token)
+                stream_parts.extend(words)
+        
+        displayed_text = ""
+        for part in stream_parts:
+            if not part: continue 
+            displayed_text += part
+            current_html = f"<div class='bot-message chat-message'>{displayed_text}</div>"
+            placeholder.markdown(current_html, unsafe_allow_html=True)
+            
+            if not part.startswith('<'):
+                if part.strip() == "":
+                    time.sleep(0.01) 
+                else:
+                    time.sleep(0.05) 
+            
+        placeholder.empty()
+
     st.session_state['history'].append({
         "role": "bot",
-        "content": text,
+        "content": full_inner_html,
         "image": image,
         "caption": caption
     })
@@ -235,14 +262,14 @@ def add_user_message(text):
 
 # ---------- UI Rendering ----------
 
-# Header (Grüner Balken oben)
+# Header
 st.markdown(f"""
 <div style='background-color:{PRIMARY_COLOR}; padding:15px; border-radius:5px; margin-bottom:20px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);'>
     <h1 style='color:white !important; margin:0; font-size:24px;'>Flori 🌿 <span style="font-size:14px; opacity:0.8;">| KI-Assistent zur Pflanzenidentifikation</span></h1>
 </div>
 """, unsafe_allow_html=True)
 
-# 1. Chat Verlauf anzeigen
+# 1. Chat Verlauf
 for msg in st.session_state['history']:
     if msg['role'] == "bot":
         with st.chat_message("assistant", avatar="🌿"):
@@ -255,63 +282,75 @@ for msg in st.session_state['history']:
 
 # 2. Logik-Controller
 
-# --- STARTZUSTAND (Kein Bild) ---
+# --- STARTZUSTAND ---
 if st.session_state['step_index'] == -1 and st.session_state['img'] is None:
     if len(st.session_state['history']) == 0:
-        # Erster Aufruf: Delay aktivieren
         add_bot_message("Hallo, ich bin Flori. 🌿 Ich helfe dir zu bestimmen, um welche Pflanze es sich auf dem gegebenen Bild handelt.", delay=True)
         st.rerun()
 
-    if st.button("📸 Foto laden & Starten"):
-        if os.path.exists(DEFAULT_IMG_PATH):
-            st.session_state['img'] = Image.open(DEFAULT_IMG_PATH).convert("RGB")
-            add_user_message("Foto laden")
-            st.rerun()
-        else:
-            st.error(f"Fehler: '{DEFAULT_IMG_FILENAME}' nicht gefunden.")
+    # Button GANZ rechtsbündig (Ratio 3:1)
+    col_l, col_r = st.columns([3, 1])
+    with col_r:
+        if st.button("📸 Foto laden & Starten"):
+            if os.path.exists(DEFAULT_IMG_PATH):
+                st.session_state['img'] = Image.open(DEFAULT_IMG_PATH).convert("RGB")
+                add_user_message("Foto laden")
+                st.rerun()
+            else:
+                st.error(f"Fehler: '{DEFAULT_IMG_FILENAME}' nicht gefunden.")
 
-# --- BILD GELADEN, ABER ANALYSE NICHT GESTARTET ---
+# --- BILD GELADEN ---
 elif st.session_state['step_index'] == -1 and st.session_state['img'] is not None:
     last_bot_msg = next((m for m in reversed(st.session_state['history']) if m['role'] == 'bot'), None)
     
     if last_bot_msg and "Foto ist da" not in last_bot_msg['content']:
         thumb = st.session_state['img'].copy()
         thumb.thumbnail((400, 400))
-        # Kurzes Delay für die Bildanalyse-Illusion
-        time.sleep(0.7) # Etwas kürzer als vorher
+        time.sleep(0.5)
         add_bot_message("Alles klar – Foto ist da. Bereit für die Analyse?", image=thumb, caption="Das Foto", delay=True)
         st.rerun()
     
     st.write("---")
-    if st.button("🔎 Analyse starten"):
-        add_user_message("Analyse starten")
-        st.session_state['step_index'] = 0
-        st.rerun()
+    # Button GANZ rechtsbündig (Ratio 3:1)
+    col_l, col_r = st.columns([3, 1])
+    with col_r:
+        if st.button("🔎 Analyse starten"):
+            add_user_message("Analyse starten")
+            st.session_state['step_index'] = 0
+            st.rerun()
 
-# --- HAUPT-FLOW (Schritte 0 bis N) ---
+# --- HAUPT-FLOW ---
 elif 0 <= st.session_state['step_index'] < len(STEPS):
     current_step = STEPS[st.session_state['step_index']]
-    
-    # Prüfen, ob der aktuelle Schritt schon im Verlauf steht
-    last_msg = st.session_state['history'][-1]
-    is_step_rendered = (last_msg['role'] == "bot" and current_step['question'] in last_msg['content'])
+    CONTINUE_QUESTION = "Sollen wir die Analyse fortsetzen?"
 
-    if not is_step_rendered:
-        # Bild vorbereiten
+    # Check: Wurde Intro schon gepostet?
+    explanation_sent = False
+    intro_fragment = current_step['intro'][:20]
+    for msg in reversed(st.session_state['history']):
+        if msg['role'] == 'bot' and intro_fragment in msg['content']:
+            explanation_sent = True
+            break
+    
+    # Check: Wurde Frage schon gepostet?
+    last_msg = st.session_state['history'][-1]
+    question_sent = (last_msg['role'] == 'bot' and CONTINUE_QUESTION in last_msg['content'])
+
+    # PHASE 1: Erklärung + Bild anzeigen
+    if not explanation_sent:
         crops = get_crops(st.session_state['img'])
         crop_img = crops.get(current_step['img_key'])
         
         if current_step['use_img_highlight']:
-            # ÄNDERUNG: Prüfen, ob ein spezieller Radius-Faktor im Step definiert ist
-            r_factor = current_step.get('radius_factor', 0.45) # Default 0.45 wenn nicht angegeben
+            r_factor = current_step.get('radius_factor', 0.45) 
             final_img = add_highlight_to_crop(crop_img, radius_factor=r_factor)
             caption_suffix = " (Fokus)"
         else:
             final_img = crop_img
             caption_suffix = ""
 
-        # Schritt 1: Erklärungstext (mit verkürztem Delay)
-        full_text = f"{current_step['intro']}<br><br>{current_step['desc']}"
+        full_text = f"<p style='margin-bottom:10px; margin-top:0;'>{current_step['intro']}</p><p style='margin-bottom:0;'>{current_step['desc']}</p>"
+        
         add_bot_message(
             full_text, 
             image=final_img, 
@@ -320,57 +359,114 @@ elif 0 <= st.session_state['step_index'] < len(STEPS):
             highlight_word=current_step.get('highlight_word'),
             delay=True
         )
-        
-        # Schritt 2: Die Frage hinterher (ganz kurzes fixes Delay)
-        time.sleep(0.3) 
-        add_bot_message(f"<b>{current_step['question']}</b>", delay=False)
         st.rerun()
 
-    else:
-        # Interaktions-Buttons
-        st.write("---")
-        col_y, col_n = st.columns(2)
+    # PHASE 2: Verzögerung + Frage stellen
+    elif explanation_sent and not question_sent:
+        # Hier die 5 Sekunden Verzögerung vor der Frage
+        placeholder = st.empty()
+        with placeholder.container():
+            st.caption("⏳ Bitte schau dir das Merkmal genau an...")
+            progress_bar = st.progress(0)
+            for i in range(50): # 50 * 0.1s = 5 Sekunden
+                time.sleep(0.1)
+                progress_bar.progress(i * 2 + 2)
         
-        if col_y.button("✅ Ja, sehe ich", key=f"yes_{st.session_state['step_index']}"):
-            add_user_message("Ja, das sehe ich.")
-            
-            time.sleep(0.3)
-            add_bot_message("👍 Super! Weiter geht's.", delay=True)
-            
-            st.session_state['step_index'] += 1
-            st.rerun()
-            
-        if col_n.button("🤔 Nein / Unsicher", key=f"no_{st.session_state['step_index']}"):
-            add_user_message("Nein, bin unsicher.")
-            
-            if current_step['use_img_highlight']:
-                reply = "Kein Problem! Achte genau auf den türkisen Bereich im Bild. Wir machen trotzdem weiter."
-            else:
-                reply = "Kein Problem, manchmal ist es schwer zu sehen. Wir schauen uns das nächste Detail an."
-            
-            time.sleep(0.3)
-            add_bot_message(reply, delay=True)
-            
-            st.session_state['step_index'] += 1
-            st.rerun()
+        placeholder.empty() # Ladebalken entfernen
+        
+        add_bot_message(f"<b>{CONTINUE_QUESTION}</b>", delay=True) 
+        st.rerun()
 
-# --- ENDE / ERGEBNIS ---
+    # PHASE 3: Button anzeigen
+    else:
+        st.write("---")
+        # Button GANZ rechtsbündig (Ratio 3:1)
+        col_l, col_r = st.columns([3, 1])
+        with col_r:
+            if st.button("➡️ Analyse fortsetzen", key=f"next_{st.session_state['step_index']}"):
+                add_user_message("Analyse fortsetzen")
+                st.session_state['step_index'] += 1
+                st.rerun()
+
+# --- ENDE / ERGEBNIS / CODE-ANZEIGE ---
 elif st.session_state['step_index'] >= len(STEPS):
     
     if not st.session_state['finished']:
+        # 1. Ergebnis
         add_bot_message("✅ <b>Ergebnis:</b> Bei dieser Pflanze handelt es sich eindeutig um einen Hibiskus (Hibiscus rosa-sinensis).", delay=True)
         
-        tip_text = "💡 <b>Pflege-Tipp:</b><br>Nicht winterhart! Im Sommer draußen, ab < 10°C hell & kühl (12-18°C) überwintern."
+        # 2. Pflege-Bild
+        if os.path.exists(CARE_IMG_PATH):
+            care_img = Image.open(CARE_IMG_PATH).convert("RGB")
+            add_bot_message(
+                "Zur besseren Veranschaulichung hier die wichtigsten Handgriffe visualisiert:",
+                image=care_img,
+                caption="Links: Fingertest zur Wasserkontrolle | Rechts: Schnitt über einem Auge",
+                delay=True
+            )
+        
+        # 3. Pflege-Tipps Text
+        tip_text = """
+        💡 <b>Ausführliche Pflege-Tipps für den Hibiskus (Roseneibisch):</b><br><br>
+        <ul style='padding-left: 20px;'>
+            <li><b>🚿 Wasser:</b> Im Sommer reichlich gießen, Staunässe aber vermeiden. Im Winter sparsamer.</li>
+            <li><b>☀️ Standort:</b> Liebt es hell und sonnig. Im Sommer gerne draußen an einem geschützten Platz.</li>
+            <li><b>🧴 Dünger:</b> Von April bis September wöchentlich mit Kübelpflanzendünger versorgen.</li>
+            <li><b>❄️ Überwinterung (Wichtig!):</b> Nicht winterhart! Sobald die Temperaturen nachts unter 10°C fallen, muss er rein. Hell und kühl (ca. 12-15°C) überwintern.</li>
+            <li><b>✂️ Schnitt:</b> Ein Rückschnitt im Frühjahr fördert einen buschigen Wuchs und neue Blüten. Schneide dazu immer knapp über einem nach außen zeigenden Auge (siehe Bild).</li>
+        </ul>
+        """
         add_bot_message(tip_text, delay=True)
         
         st.session_state['finished'] = True
         st.rerun() 
     
-    # 2. Anzeige wenn fertig
     st.success("Chat beendet. Vielen Dank für die Teilnahme!")
-    st.info("Bitte kehre nun zu deinem Fragebogen zurück.")
+
+    # ----------------------------------------------------
+    # FINAL: Button (Groß & Mittig & Grün) -> 5 Sekunden Timer -> Code
+    # ----------------------------------------------------
     
-    if st.button("🔄 Neuer Durchlauf (für Testzwecke)"):
-        st.session_state.clear()
-        st.rerun()
+    if not st.session_state['final_timer_done']:
+        st.write("---")
+        
+        # Zentrieren durch Spalten-Layout [1, 2, 1]
+        _, col_mid, _ = st.columns([1, 2, 1])
+        with col_mid:
+            # type="primary" -> Triggered unser neues CSS (Grün + Fett)
+            if st.button("🔐 CODE FÜR UMFRAGE GENERIEREN", type="primary"):
+                placeholder = st.empty()
+                with placeholder.container():
+                    st.info("Dein Bestätigungscode wird generiert... Bitte warten.")
+                    progress_bar = st.progress(0)
+                    for i in range(50): # 50 * 0.1s = 5 Sekunden
+                        time.sleep(0.1)
+                        progress_bar.progress(i * 2 + 2)
+                
+                placeholder.empty()
+                st.session_state['final_timer_done'] = True
+                st.rerun()
+
+    # ----------------------------------------------------
+    # FINAL: Anzeige des Codes + Info Message + Reset Button
+    # ----------------------------------------------------
     
+    if st.session_state['final_timer_done']:
+        code_display_html = f"""
+        <div style="background-color: {BOT_BG}; border: 2px solid {PRIMARY_COLOR}; padding: 20px; border-radius: 10px; text-align: center; margin: 20px 0; font-family: Arial, sans-serif;">
+            <h3 style="margin: 0 0 10px 0; color: {TEXT_COLOR}; font-size: 1.2em;">Dein Code für die Umfrage:</h3>
+            <div style="font-size: 3em; color: {PRIMARY_COLOR}; font-family: monospace; letter-spacing: 2px; font-weight: bold; margin-bottom: 5px;">FL-7562</div>
+            <p style="margin-top: 10px; color: #888; font-size: 0.9em;">Bitte notiere diesen Code oder kopiere ihn für den Fragebogen.</p>
+        </div>
+        """
+        st.markdown(code_display_html, unsafe_allow_html=True)
+
+        st.info("Du kannst dieses Browserfenster nun schließen oder zum Fragebogen zurückkehren.")
+        
+        st.write("---")
+        # Reset Button GANZ rechtsbündig (Ratio 3:1)
+        col_l, col_r = st.columns([3, 1])
+        with col_r:
+            if st.button("🔄 Neuer Durchlauf (für Testzwecke)"):
+                st.session_state.clear()
+                st.rerun()
