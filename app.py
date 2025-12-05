@@ -247,18 +247,18 @@ STEPS = [
         "intro": "🌺 Das absolut sicherste Erkennungsmerkmal befindet sich im Zentrum:",
         "img_key": "stamens",
         "caption": "Staminalsäule (Columna)",
-        "desc": "Hier sind Staubfäden und Griffel zu einer langen Röhre verwachsen – der sogenannten Staminalsäule. Sie ragt weit aus der Blüte heraus. An der Spitze sitzen fünf samtige Narbenäste, darunter die vielen gelben Staubbeutel.",
+        "desc": "Im Zentrum der Blüte identifiziere ich eine markante, lange Säule (Staminalsäule). Ganz an der Spitze dieser Säule sind deutlich die gelben Pollen (Staubgefäße) zu erkennen.",
         "contrast": "💡 Abgrenzung: Bei der ähnlichen Malve ist diese Säule zwar auch vorhanden, aber viel kürzer, gedrungener und wirkt eher buschig als säulenartig.",
         "highlight_word": "Staminalsäule",
         "use_img_highlight": True,
         "radius_factor": 0.28, 
     },
     {
-        "intro": "🧠 Meine Analyse hat folgende wichtige Merkmale der Blüte identifiziert:",
+        "intro": "🧠 Folgende Elemente des gegebenen Bildes habe ich als besonders relevant für die Identifizierung der Pflanze eingestuft (siehe Bild: Rot → relevant / Blau → irrelevant)",
         "custom_img_path": HEATMAP_IMG_PATH,
         "caption": "KI-Heatmap & Analyse-Ergebnis",
-        "desc": "Die Kombination ist eindeutig: Die <b>offene Trichterform</b>, die <b>gesägten Ränder</b> mit der feinen Aderung und vor allem die <b>lange, herausragende Staminalsäule</b> sind der 'genetische Fingerabdruck' dieser Pflanze.",
-        "contrast": "Alle drei Merkmale zusammen schließen Verwechslungen mit Malven oder Rosen fast vollständig aus.",
+        "desc": "Die Kombination der Merkmale ist eindeutig. Ich kann die Pflanze jetzt identifizieren!",
+        "contrast": "Alle analysierten Merkmale zusammen schließen Verwechslungen mit Malven oder Rosen fast vollständig aus.",
         "use_img_highlight": False
     }
 ]
