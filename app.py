@@ -1,9 +1,11 @@
 import streamlit as st
+import streamlit.components.v1 as components
 from PIL import Image, ImageDraw
 import os
 import math
 import time
 import re
+import uuid
 
 # ---------- Konfiguration ----------
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -40,6 +42,35 @@ st.set_page_config(
     page_icon="🌿",
     layout="centered"
 )
+
+# ---------- Helper: Auto-Scroll Funktion (Live-Version) ----------
+def scroll_to_bottom():
+    """
+    Erstellt einen EINZIGARTIGEN Anker an der aktuellen Position und scrollt dorthin.
+    Wird direkt nach jeder Nachricht aufgerufen.
+    """
+    # Wir generieren eine zufällige ID, damit wir immer zum NEUESTEN Punkt scrollen
+    anchor_id = str(uuid.uuid4())
+    
+    # 1. Den Anker setzen (unsichtbar)
+    st.markdown(f'<div id="{anchor_id}"></div>', unsafe_allow_html=True)
+    
+    # 2. JavaScript, um genau zu diesem neuen Anker zu springen
+    js = f"""
+    <script>
+        function jumpToAnchor() {{
+            var element = window.parent.document.getElementById('{anchor_id}');
+            if (element) {{
+                element.scrollIntoView({{behavior: "smooth", block: "end", inline: "nearest"}});
+            }}
+        }}
+        // Wir führen es sofort aus
+        jumpToAnchor();
+        // Und sicherheitshalber nochmal kurz danach (falls Rendering verzögert ist)
+        setTimeout(jumpToAnchor, 100);
+    </script>
+    """
+    components.html(js, height=0, width=0)
 
 # ---------- CSS Styling (Light Mode - Optimiert) ----------
 st.markdown(f"""
@@ -289,19 +320,22 @@ def show_smooth_progress_bar(duration_seconds=5):
     """
     placeholder = st.empty()
     placeholder.markdown(bar_html, unsafe_allow_html=True)
+    
+    # AUCH HIER SCROLLEN, damit der Ladebalken sichtbar bleibt
+    scroll_to_bottom()
+    
     time.sleep(duration_seconds)
     placeholder.empty()
 
 def add_bot_message(text, image=None, caption=None, contrast=None, highlight_word=None, delay=True, msg_id=None):
     """
     Fügt Bot-Nachricht hinzu.
-    msg_id: Eindeutige ID zur Identifizierung der Nachricht (verhindert Loops)
+    INKLUSIVE AUTO-SCROLL BEIM SCHREIBEN.
     """
     
     if text and highlight_word and highlight_word in text:
         text = text.replace(highlight_word, f"<span style='color: {HIGHLIGHT_TEXT_COL}; font-weight: bold;'>{highlight_word}</span>")
     
-    # NEU: Prüfen, ob wirklich Text existiert, um leere Boxen zu vermeiden
     has_text_content = (text and text.strip()) or (contrast and contrast.strip())
     
     full_inner_html = ""
@@ -315,12 +349,13 @@ def add_bot_message(text, image=None, caption=None, contrast=None, highlight_wor
             if image:
                 st.image(image, caption=caption, use_container_width=True)
             
-            # Nur wenn Text da ist, Typing Indicator und Box anzeigen
             if has_text_content:
                 msg_placeholder = st.empty()
                 msg_placeholder.markdown("<div class='typing-indicator'>✍️ Flori schreibt...</div>", unsafe_allow_html=True)
                 
-                # Dynamische Zeitberechnung
+                # <--- HIER SCROLLEN: Damit man sieht, dass er schreibt --->
+                scroll_to_bottom()
+                
                 clean_text = re.sub(r'<[^>]+>', '', text if text else "")
                 if contrast:
                     clean_text += contrast
@@ -330,11 +365,15 @@ def add_bot_message(text, image=None, caption=None, contrast=None, highlight_wor
                 
                 time.sleep(final_delay)
                 
-                # Überschreiben des Placeholders
+                # Überschreiben
                 msg_placeholder.markdown(f"<div class='bot-message chat-message'>{full_inner_html}</div>", unsafe_allow_html=True)
+                
+                # <--- HIER NOCHMAL SCROLLEN: Wenn die Nachricht fertig ist --->
+                scroll_to_bottom()
+            else:
+                # Falls nur Bild da ist, auch scrollen
+                scroll_to_bottom()
 
-    # Nachricht mit ID in History speichern
-    # Wenn kein Text da ist, speichern wir einen leeren String, damit das UI später weiß, dass nichts gerendert werden soll
     st.session_state['history'].append({
         "role": "bot",
         "content": full_inner_html if has_text_content else "",
@@ -348,6 +387,9 @@ def add_user_message(text):
         "role": "user",
         "content": text
     })
+    # Auch bei User-Nachricht scrollen (wird beim Reload angezeigt)
+    # Da st.rerun() folgt, greift hier meist der Scroll am Ende, aber sicher ist sicher:
+    scroll_to_bottom()
 
 # ---------- UI Rendering ----------
 
@@ -365,7 +407,6 @@ for msg in st.session_state['history']:
             if msg.get('image'):
                 st.image(msg['image'], caption=msg['caption'], use_container_width=True)
             
-            # NEU: Nur rendern, wenn Inhalt existiert! (Verhindert leere grüne Boxen beim Reload)
             if msg['content'] and msg['content'].strip():
                 st.markdown(f"<div class='bot-message chat-message'>{msg['content']}</div>", unsafe_allow_html=True)
     else:
@@ -418,50 +459,38 @@ elif 0 <= st.session_state['step_index'] < len(STEPS):
     # Prüfen, ob wir im letzten Schritt (Heatmap) sind
     is_last_step = (st.session_state['step_index'] == len(STEPS) - 1)
     
-    # 1. Texte und Frage je nach Schritt anpassen
     if is_last_step:
-        # Letzter Schritt: Andere Frage
         CONTINUE_QUESTION = "Soll ich mit diesen Ergebnissen die Pflanze identifizieren?"
-        ANNOUNCE_TEXT = None # Keine Ankündigung im letzten Schritt
+        ANNOUNCE_TEXT = None
     else:
-        # Normale Schritte
         CONTINUE_QUESTION = "Sollen wir die Analyse fortsetzen?"
         ANNOUNCE_TEXT = f"🔬 <i>Ich analysiere jetzt folgenden Bereich:</i> <b>{current_step['caption']}</b>..."
 
-    # --- Generierung eindeutiger IDs für diesen Schritt ---
     step_id_prefix = f"step_{st.session_state['step_index']}"
     
-    # IDs für Standard-Ablauf
     announce_msg_id = f"{step_id_prefix}_announce"
     expl_msg_id = f"{step_id_prefix}_expl"
     
-    # Spezielle IDs für den Heatmap-Ablauf (Text und Bild getrennt)
     heatmap_text_id = f"{step_id_prefix}_heatmap_text"
     heatmap_img_id = f"{step_id_prefix}_heatmap_img"
     
     question_msg_id = f"{step_id_prefix}_quest"
 
-    # Reset Flags
     announce_sent = False
     explanation_sent = False
     question_sent = False
     
-    # --- PRÜFEN DER IDs IN DER HISTORY ---
     for msg in st.session_state['history']:
-        # Ankündigung checken
         if msg.get('msg_id') == announce_msg_id:
             announce_sent = True
-            
-        # Erklärung checken (Unterscheidung normal vs. letzter Schritt)
+        
         if not is_last_step:
             if msg.get('msg_id') == expl_msg_id:
                 explanation_sent = True
         else:
-            # Im letzten Schritt ist die Erklärung fertig, wenn das BILD (als 2. Teil) gesendet wurde
             if msg.get('msg_id') == heatmap_img_id:
                 explanation_sent = True
 
-        # Frage checken
         if msg.get('msg_id') == question_msg_id:
             question_sent = True
 
@@ -470,22 +499,16 @@ elif 0 <= st.session_state['step_index'] < len(STEPS):
     # ------------------------------------------------------------------
     if not explanation_sent:
         
-        # 1. Ankündigung (NUR wenn NICHT letzter Schritt)
         if not is_last_step and not announce_sent:
             if st.session_state['step_index'] == 0:
                 time.sleep(0.2)
             add_bot_message(ANNOUNCE_TEXT, delay=True, msg_id=announce_msg_id)
             time.sleep(0.8) 
         
-        # 2. Inhalt (Erklärung & Bild)
-        
-        # --> SPEZIALFALL: Letzter Schritt (Heatmap)
         if is_last_step:
-            # Prüfen ob Text-Teil schon da ist
             text_already_sent = any(m.get('msg_id') == heatmap_text_id for m in st.session_state['history'])
             
             if not text_already_sent:
-                # A) Erst den Text senden
                 full_text = f"<p style='margin-bottom:10px; margin-top:0;'>{current_step['intro']}</p><p style='margin-bottom:0;'>{current_step['desc']}</p>"
                 add_bot_message(
                     full_text,
@@ -495,11 +518,10 @@ elif 0 <= st.session_state['step_index'] < len(STEPS):
                 )
                 st.rerun()
             else:
-                # B) Dann das Bild senden (wenn Text schon da ist)
                 if os.path.exists(current_step['custom_img_path']):
                     hm_img = Image.open(current_step['custom_img_path']).convert("RGB")
                     add_bot_message(
-                        "", # Kein Text, nur Bild. DANK FIX OBEN ERSCHEINT JETZT KEINE LEERE BOX MEHR.
+                        "", 
                         image=hm_img,
                         caption=current_step['caption'],
                         delay=True,
@@ -507,13 +529,11 @@ elif 0 <= st.session_state['step_index'] < len(STEPS):
                     )
                 st.rerun()
 
-        # --> STANDARD: Normale Schritte (Bild + Text zusammen)
         else:
             final_img = None
             caption_suffix = ""
 
             if 'custom_img_path' in current_step:
-                # ... (Logic wie vorher) ...
                 c_path = current_step['custom_img_path']
                 if os.path.exists(c_path):
                     final_img = Image.open(c_path).convert("RGB")
@@ -546,8 +566,8 @@ elif 0 <= st.session_state['step_index'] < len(STEPS):
         
         info_placeholder = st.empty()
         info_placeholder.caption("⏳ Weitere Analyse wird durchgeführt...")
+        scroll_to_bottom() # Damit man den Timer sieht
         
-        # Kurze Pause für den Flow
         show_smooth_progress_bar(duration_seconds=3 if is_last_step else 5)
         
         info_placeholder.empty() 
@@ -560,21 +580,22 @@ elif 0 <= st.session_state['step_index'] < len(STEPS):
         st.write("---")
         col_l, col_r = st.columns([3, 1])
         
-        # Dynamischer Button-Text
         button_label = "Pflanze identifizieren" if is_last_step else "➡️ Analyse fortsetzen"
         
         with col_r:
             if st.button(button_label, key=f"next_{st.session_state['step_index']}"):
-                add_user_message(button_label) # User message passt sich auch an
+                add_user_message(button_label)
                 st.session_state['step_index'] += 1
                 st.rerun()
+        
+        # Sicherstellen, dass der Button sichtbar ist
+        scroll_to_bottom()
 
 # --- ENDE / ERGEBNIS / CODE-ANZEIGE ---
 elif st.session_state['step_index'] >= len(STEPS):
     
     if not st.session_state['finished']:
         # 1. Ergebnis
-        # Auch hier können wir IDs nutzen, um ganz sicher zu gehen
         res_msg_id = "result_final_msg"
         if not any(m.get('msg_id') == res_msg_id for m in st.session_state['history']):
             add_bot_message("✅ <b>Ergebnis:</b> Bei dieser Pflanze handelt es sich eindeutig um einen Hibiskus (Hibiscus rosa-sinensis).", delay=True, msg_id=res_msg_id)
@@ -585,7 +606,7 @@ elif st.session_state['step_index'] >= len(STEPS):
         if os.path.exists(CARE_IMG_PATH) and not any(m.get('msg_id') == care_msg_id for m in st.session_state['history']):
             care_img = Image.open(CARE_IMG_PATH).convert("RGB")
             add_bot_message(
-                "", # KEIN TEXT -> KEINE LEERE BOX DURCH FIX
+                "", 
                 image=care_img,
                 caption="Links: Fingertest zur Wasserkontrolle | Rechts: Schnitt über einem Auge",
                 delay=True,
@@ -611,7 +632,7 @@ elif st.session_state['step_index'] >= len(STEPS):
     st.success("Chat beendet. Vielen Dank für die Teilnahme!")
 
     # ----------------------------------------------------
-    # FINAL: Button (Groß & Mittig & Grün) -> 5 Sekunden Timer -> Code
+    # FINAL
     # ----------------------------------------------------
     
     if not st.session_state['final_timer_done']:
@@ -623,17 +644,14 @@ elif st.session_state['step_index'] >= len(STEPS):
                 placeholder = st.empty()
                 with placeholder.container():
                     st.info("Dein Bestätigungscode wird generiert... Bitte warten.")
-                    # Auch hier die neue Animation
                     show_smooth_progress_bar(duration_seconds=5)
                 
                 placeholder.empty()
                 st.session_state['final_timer_done'] = True
                 st.rerun()
+        
+        scroll_to_bottom()
 
-    # ----------------------------------------------------
-    # FINAL: Anzeige des Codes + Info Message + Reset Button
-    # ----------------------------------------------------
-    
     if st.session_state['final_timer_done']:
         code_display_html = f"""
         <div style="background-color: {BOT_BG}; border: 2px solid {PRIMARY_COLOR}; padding: 20px; border-radius: 10px; text-align: center; margin: 20px 0; font-family: Arial, sans-serif;">
@@ -652,3 +670,8 @@ elif st.session_state['step_index'] >= len(STEPS):
             if st.button("🔄 Neuer Durchlauf"):
                 st.session_state.clear()
                 st.rerun()
+        
+        scroll_to_bottom()
+
+# Finaler Scroll Check am Ende
+scroll_to_bottom()
