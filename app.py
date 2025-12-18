@@ -23,6 +23,14 @@ TRICHTER_IMG_PATH = os.path.join(SCRIPT_DIR, TRICHTER_IMG_FILENAME)
 HEATMAP_IMG_FILENAME = "heatmap.png"
 HEATMAP_IMG_PATH = os.path.join(SCRIPT_DIR, HEATMAP_IMG_FILENAME)
 
+# ---------- NEU: CACHING FÜR DATEI-ZUGRIFF ----------
+@st.cache_data
+def load_img_from_disk(path):
+    """Lädt Bilder einmalig in den RAM des vServers."""
+    if os.path.exists(path):
+        return Image.open(path).convert("RGB")
+    return None
+
 # ---------- Design-Farben (Light Mode) ----------
 PRIMARY_COLOR = "#2E7D32"
 APP_BG        = "#FFFFFF"
@@ -192,8 +200,10 @@ st.markdown(f"""
 
 # ---------- Logik-Funktionen (Bildbearbeitung) ----------
 
+# ---------- NEU: CACHING FÜR HIGHLIGHT BERECHNUNG ----------
+@st.cache_data
 def add_highlight_to_crop(pil_crop_img, radius_factor=0.45):
-    """Fügt den Highlight-Effekt (türkiser Kreis) hinzu."""
+    """Fügt den Highlight-Effekt hinzu und cacht das Ergebnis."""
     if pil_crop_img is None: return None
     base = pil_crop_img.convert("RGBA")
     w, h = base.size
@@ -227,8 +237,10 @@ def add_highlight_to_crop(pil_crop_img, radius_factor=0.45):
     
     return Image.alpha_composite(combined, border_layer).convert("RGB")
 
+# ---------- NEU: CACHING FÜR CROPS ----------
+@st.cache_data
 def get_crops(img):
-    """Erstellt die Ausschnitte."""
+    """Erstellt die Ausschnitte und cacht sie."""
     crops_pct = {
         "overview":   (0.10, 0.05, 0.90, 0.95), 
         "petal_edge": (0.65, 0.20, 0.95, 0.50), 
@@ -424,8 +436,10 @@ if st.session_state['step_index'] == -1 and st.session_state['img'] is None:
     col_l, col_r = st.columns([3, 1])
     with col_r:
         if st.button("📸 Foto laden & Starten"):
-            if os.path.exists(DEFAULT_IMG_PATH):
-                st.session_state['img'] = Image.open(DEFAULT_IMG_PATH).convert("RGB")
+            # ANPASSUNG: Nutzt Cache-Ladefunktion
+            img = load_img_from_disk(DEFAULT_IMG_PATH)
+            if img:
+                st.session_state['img'] = img
                 add_user_message("Foto laden")
                 st.rerun()
             else:
@@ -518,8 +532,9 @@ elif 0 <= st.session_state['step_index'] < len(STEPS):
                 )
                 st.rerun()
             else:
-                if os.path.exists(current_step['custom_img_path']):
-                    hm_img = Image.open(current_step['custom_img_path']).convert("RGB")
+                # ANPASSUNG: Nutzt Cache-Ladefunktion für Heatmap
+                hm_img = load_img_from_disk(current_step['custom_img_path'])
+                if hm_img:
                     add_bot_message(
                         "", 
                         image=hm_img,
@@ -534,10 +549,10 @@ elif 0 <= st.session_state['step_index'] < len(STEPS):
             caption_suffix = ""
 
             if 'custom_img_path' in current_step:
-                c_path = current_step['custom_img_path']
-                if os.path.exists(c_path):
-                    final_img = Image.open(c_path).convert("RGB")
+                # ANPASSUNG: Nutzt Cache-Ladefunktion
+                final_img = load_img_from_disk(current_step['custom_img_path'])
             else:
+                # Nutzt die gecachten Funktionen für Crops und Highlights
                 crops = get_crops(st.session_state['img'])
                 crop_img = crops.get(current_step['img_key'])
                 
@@ -603,15 +618,17 @@ elif st.session_state['step_index'] >= len(STEPS):
         
         # 2. Pflege-Bild 
         care_msg_id = "care_img_msg"
-        if os.path.exists(CARE_IMG_PATH) and not any(m.get('msg_id') == care_msg_id for m in st.session_state['history']):
-            care_img = Image.open(CARE_IMG_PATH).convert("RGB")
-            add_bot_message(
-                "", 
-                image=care_img,
-                caption="Links: Fingertest zur Wasserkontrolle | Rechts: Schnitt über einem Auge",
-                delay=True,
-                msg_id=care_msg_id
-            )
+        if not any(m.get('msg_id') == care_msg_id for m in st.session_state['history']):
+            # ANPASSUNG: Nutzt Cache-Ladefunktion
+            care_img = load_img_from_disk(CARE_IMG_PATH)
+            if care_img:
+                add_bot_message(
+                    "", 
+                    image=care_img,
+                    caption="Links: Fingertest zur Wasserkontrolle | Rechts: Schnitt über einem Auge",
+                    delay=True,
+                    msg_id=care_msg_id
+                )
         
         # 3. Pflege-Tipps Text
         tips_msg_id = "tips_text_msg"
@@ -631,10 +648,6 @@ elif st.session_state['step_index'] >= len(STEPS):
     
     st.success("Chat beendet. Vielen Dank für die Teilnahme!")
 
-    # ----------------------------------------------------
-    # FINAL
-    # ----------------------------------------------------
-    
     if not st.session_state['final_timer_done']:
         st.write("---")
         
@@ -656,7 +669,7 @@ elif st.session_state['step_index'] >= len(STEPS):
         code_display_html = f"""
         <div style="background-color: {BOT_BG}; border: 2px solid {PRIMARY_COLOR}; padding: 20px; border-radius: 10px; text-align: center; margin: 20px 0; font-family: Arial, sans-serif;">
             <h3 style="margin: 0 0 10px 0; color: {TEXT_COLOR}; font-size: 1.2em;">Dein Code für die Umfrage:</h3>
-            <div style="font-size: 3em; color: {PRIMARY_COLOR}; font-family: monospace; letter-spacing: 2px; font-weight: bold; margin-bottom: 5px;">FL-7562</div>
+            <div style="font-size: 3em; color: {PRIMARY_COLOR}; font-family: monospace; letter-spacing: 2px; font-weight: bold; margin-bottom: 5px;">7562</div>
             <p style="margin-top: 10px; color: #888; font-size: 0.9em;">Bitte notiere diesen Code oder kopiere ihn für den Fragebogen.</p>
         </div>
         """
